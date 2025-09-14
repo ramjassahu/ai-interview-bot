@@ -1,7 +1,7 @@
 AI Interview Bot 🤖
 A smart, interactive interview simulator powered by Google Gemini and LangChain. This application conducts a personalized technical interview based on a candidate's resume and a predefined knowledge base.
 
-➡️ Live Demo Link
+➡️ Live Demo Link(http://ai-interview-bot-ramjas.streamlit.app)
 
 A quick walkthrough of the AI Interview Bot in action.
 
@@ -60,8 +60,8 @@ To run this application on your own machine, follow these steps:
 
 1. Clone the Repository
 
-git clone [https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git](https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git)
-cd YOUR_REPO_NAME
+git clone (https://github.com/ramjassahu/ai-interview-bot.git)
+cd ai-interview-bot
 
 2. Create a .env File
 Create a file named .env in the root of the project folder and add your API keys:
@@ -85,5 +85,6 @@ python -m spacy download en_core_web_sm
 4. Run the Streamlit App
 
 streamlit run main.py
+
 
 The application should now be running in your local browser!
