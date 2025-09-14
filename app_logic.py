@@ -156,7 +156,7 @@ Your response MUST be structured in two parts: an <evaluation> block and a <ques
     return prompt | llm | StrOutputParser()
 
 # --- 6. Feedback Report Generation ---
-chat_history=[]
+
 def generate_feedback_report_chain(google_api_key):
     """
     Initializes a separate LangChain chain to generate a final feedback report.
@@ -198,6 +198,7 @@ def generate_feedback_report_chain(google_api_key):
     )
     
     return prompt | llm | StrOutputParser()
+
 
 
 
