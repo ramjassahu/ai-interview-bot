@@ -122,9 +122,8 @@ if st.session_state.session_vars["interview_started"]:
         with st.spinner("Generating Report..."):
             full_transcript = "\n".join([f"{msg['role'].title()}: {msg['content']}" for msg in st.session_state.session_vars["chat_history"]])
             
-            feedback_report = st.session_state.session_vars["report_chain"].invoke({
-                "chat_history": full_transcript
-            })
+            # --- CORRECTED LINE ---
+            feedback_report = st.session_state.session_vars["report_chain"].invoke(full_transcript)
 
             st.subheader("Interview Performance Report")
             st.markdown(feedback_report)
