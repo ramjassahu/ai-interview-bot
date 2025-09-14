@@ -1,3 +1,4 @@
+python-3.11
 streamlit
 python-dotenv
 langchain
@@ -10,3 +11,4 @@ pypdf
 PyMuPDF
 spacy
 en_core_web_sm
+
