@@ -156,42 +156,42 @@ Your response MUST be structured in two parts: an <evaluation> block and a <ques
     return prompt | llm | StrOutputParser()
 
 # --- 6. Feedback Report Generation ---
-
 def generate_feedback_report_chain(google_api_key):
     """
     Initializes a separate LangChain chain to generate a final feedback report.
-    This version uses a highly direct and constrained prompt to prevent hallucinations.
+    This version is STRICT: it only uses the provided chat_history and must not
+    invent or include sample transcripts.
     """
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
-    # ### FINAL, MOST DIRECT PROMPT ###
-    # This prompt is structured to eliminate any possible confusion for the LLM.
-    # It contains no examples, only direct commands and the data placeholder.
     prompt_template_text = """
-    You are a hiring manager. Your only task is to analyze the interview transcript provided below and generate a performance report.
+    You are a hiring manager. Your only task is to analyze the interview transcript provided below
+    and generate a performance report. 
+
+    DO NOT include any examples, demo transcripts, or names not found in the provided transcript.
+    ONLY use the chat history exactly as given.
+
+    ---
+    **INTERVIEW TRANSCRIPT:**
+    {{chat_history}}
+    ---
 
     **YOUR OUTPUT MUST STRICTLY FOLLOW THIS FORMAT:**
 
     ### Overall Summary
-    A 2-3 sentence summary of the candidate's performance.
+    (2–3 sentence summary of the candidate's performance, only based on transcript above.)
 
     ### Strengths
-    * A bullet point listing a key strength.
-    * Another bullet point listing a strength.
+    * Bullet point of a key strength
+    * Bullet point of another strength
 
     ### Areas for Improvement
-    * A bullet point listing a constructive point of feedback.
+    * Bullet point of a constructive feedback area
 
     ### Hiring Recommendation
-    A clear recommendation (e.g., "Recommend," "Strong Recommend," "No Hire") followed by a single sentence justification.
-
-    ---
-    **INTERVIEW TRANSCRIPT TO ANALYZE:**
-    {{chat_history}}
-    ---
-
-    **PERFORMANCE REPORT:**
+    (One of: "Strong Recommend", "Recommend", "No Hire") – with a single sentence justification.
     """
+
     prompt = PromptTemplate(
         template=prompt_template_text,
         input_variables=["chat_history"]
