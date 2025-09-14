@@ -3,6 +3,7 @@ import pickle
 import fitz  # PyMuPDF
 import spacy
 from dotenv import load_dotenv
+
 from langchain_core.output_parsers import StrOutputParser
 from langchain.prompts import PromptTemplate
 from langchain_cohere import CohereEmbeddings
@@ -13,7 +14,7 @@ from langchain.retrievers.ensemble import EnsembleRetriever
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# This resolves a common issue on Windows with multiple OpenMP libraries
+# Fixes a common issue on Windows with multiple OpenMP libraries
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # --- 1. Environment and API Key Setup ---
@@ -26,6 +27,7 @@ def setup_environment():
     if not cohere_api_key or not google_api_key:
         raise ValueError("COHERE_API_KEY and GOOGLE_API_KEY must be set in a .env file.")
     return cohere_api_key, google_api_key
+
 
 # --- 2. Document Processing and Retriever Creation ---
 
@@ -48,6 +50,7 @@ def get_retriever(knowledge_base_path, cohere_api_key):
         print(f"🔧 Building new vector store for {doc_name}...")
         loader = PyPDFLoader(knowledge_base_path)
         pages = loader.load()
+
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         splits = splitter.split_documents(pages)
 
@@ -72,6 +75,7 @@ def get_retriever(knowledge_base_path, cohere_api_key):
     print("✅ Ensemble retriever created.")
     return ensemble_retriever
 
+
 # --- 3. Resume Analysis ---
 
 def analyze_resume(resume_path):
@@ -94,14 +98,17 @@ def analyze_resume(resume_path):
         "oracle", "database", "t-sql", "pl/sql", "query", "queries", "nosql",
         "mongodb", "cassandra", "data modeling", "data warehousing"
     ]
+
     doc = nlp(text)
-    sql_sentences = []
-    for sentence in doc.sents:
-        if any(keyword in sentence.text.lower() for keyword in sql_keywords):
-            sql_sentences.append(sentence.text.strip().replace("\n", " "))
-    
+    sql_sentences = [
+        sentence.text.strip().replace("\n", " ")
+        for sentence in doc.sents
+        if any(keyword in sentence.text.lower() for keyword in sql_keywords)
+    ]
+
     print(f"✅ Found {len(sql_sentences)} relevant sentences in the resume.")
     return sql_sentences
+
 
 # --- 4. RAG Context Retrieval ---
 
@@ -119,6 +126,7 @@ def get_relevant_context(retriever, queries):
     print("✅ Generated context from relevant document chunks.")
     return context_text
 
+
 # --- 5. Conversational Chain Initialization ---
 
 def initialize_interview_chain(google_api_key, student_name):
@@ -127,8 +135,7 @@ def initialize_interview_chain(google_api_key, student_name):
     """
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
-    prompt_template_text = 
-    """
+    prompt_template_text = f"""
 ### Persona:
 You are an expert Hiring Manager at a top tech company. You are interviewing "{student_name}".
 
@@ -143,11 +150,12 @@ Your response MUST be structured in two parts: an <evaluation> block and a <ques
 {{chat_history}}
 ---
 ### **Your Two-Part Task:**
-1.  **Internal Evaluation (Think Step):** In an `<evaluation>` tag, write a brief, private analysis of the candidate's last answer.
-2.  **Formulate Next Question (Act Step):** In a `<question>` tag, write your response to the candidate. Acknowledge their last point and ask your next single, open-ended question.
+1. **Internal Evaluation (Think Step):** In an `<evaluation>` tag, write a brief, private analysis of the candidate's last answer.
+2. **Formulate Next Question (Act Step):** In a `<question>` tag, write your response to the candidate. Acknowledge their last point and ask your next single, open-ended question.
 
 **Your Turn:**
 """
+
     prompt = PromptTemplate(
         template=prompt_template_text,
         input_variables=["related_data", "chat_history"]
@@ -155,7 +163,9 @@ Your response MUST be structured in two parts: an <evaluation> block and a <ques
     
     return prompt | llm | StrOutputParser()
 
+
 # --- 6. Feedback Report Generation ---
+
 def generate_feedback_report_chain(google_api_key):
     """
     Initializes a separate LangChain chain to generate a final feedback report.
@@ -165,32 +175,32 @@ def generate_feedback_report_chain(google_api_key):
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
     prompt_template_text = """
-    You are a hiring manager. Your only task is to analyze the interview transcript provided below
-    and generate a performance report. 
+You are a hiring manager. Your only task is to analyze the interview transcript provided below
+and generate a performance report. 
 
-    DO NOT include any examples, demo transcripts, or names not found in the provided transcript.
-    ONLY use the chat history exactly as given.
+DO NOT include any examples, demo transcripts, or names not found in the provided transcript.
+ONLY use the chat history exactly as given.
 
-    ---
-    **INTERVIEW TRANSCRIPT:**
-    {{chat_history}}
-    ---
+---
+**INTERVIEW TRANSCRIPT:**
+{{chat_history}}
+---
 
-    **YOUR OUTPUT MUST STRICTLY FOLLOW THIS FORMAT:**
+**YOUR OUTPUT MUST STRICTLY FOLLOW THIS FORMAT:**
 
-    ### Overall Summary
-    (2–3 sentence summary of the candidate's performance, only based on transcript above.)
+### Overall Summary
+(2–3 sentence summary of the candidate's performance, only based on transcript above.)
 
-    ### Strengths
-    * Bullet point of a key strength
-    * Bullet point of another strength
+### Strengths
+* Bullet point of a key strength
+* Bullet point of another strength
 
-    ### Areas for Improvement
-    * Bullet point of a constructive feedback area
+### Areas for Improvement
+* Bullet point of a constructive feedback area
 
-    ### Hiring Recommendation
-    (One of: "Strong Recommend", "Recommend", "No Hire") – with a single sentence justification.
-    """
+### Hiring Recommendation
+(One of: "Strong Recommend", "Recommend", "No Hire") – with a single sentence justification.
+"""
 
     prompt = PromptTemplate(
         template=prompt_template_text,
@@ -198,4 +208,3 @@ def generate_feedback_report_chain(google_api_key):
     )
     
     return prompt | llm | StrOutputParser()
-
