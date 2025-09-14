@@ -32,6 +32,7 @@ def setup_environment():
 def get_retriever(knowledge_base_path, cohere_api_key):
     """
     Creates or loads a hybrid retriever (FAISS + BM25) from a PDF document.
+    Caches the vector store and splits for faster re-runs.
     """
     doc_name = os.path.splitext(os.path.basename(knowledge_base_path))[0]
     vectordb_path = f"faiss_cache_{doc_name}"
@@ -75,7 +76,10 @@ def get_retriever(knowledge_base_path, cohere_api_key):
 # --- 3. Resume Analysis ---
 
 def analyze_resume(resume_path):
-    """Extracts text from a resume and finds sentences related to SQL/databases."""
+    """
+    Extracts text from a resume and finds sentences related to technical skills.
+    This version is more generic than the original SQL-focused one.
+    """
     nlp = spacy.load("en_core_web_sm")
     text = ""
     try:
@@ -89,19 +93,23 @@ def analyze_resume(resume_path):
     if not text:
         return []
 
-    sql_keywords = [
-        "sql", "mysql", "postgresql", "mssql", "sqlite", "sql server",
-        "oracle", "database", "t-sql", "pl/sql", "query", "queries", "nosql",
-        "mongodb", "cassandra", "data modeling", "data warehousing"
+    # Expanded list of technical keywords
+    tech_keywords = [
+        "python", "java", "c++", "javascript", "sql", "nosql", "react", "angular", "vue",
+        "django", "flask", "spring", "node.js", "docker", "kubernetes", "aws", "azure", "gcp",
+        "tensorflow", "pytorch", "scikit-learn", "pandas", "numpy", "api", "rest", "graphql",
+        "mysql", "postgresql", "mongodb", "redis", "cassandra", "data modeling", "data warehousing",
+        "machine learning", "deep learning", "natural language processing", "computer vision",
+        "langchain", "faiss", "bm25", "fastapi"
     ]
     doc = nlp(text)
-    sql_sentences = []
+    skill_sentences = []
     for sentence in doc.sents:
-        if any(keyword in sentence.text.lower() for keyword in sql_keywords):
-            sql_sentences.append(sentence.text.strip().replace("\n", " "))
+        if any(keyword in sentence.text.lower() for keyword in tech_keywords):
+            skill_sentences.append(sentence.text.strip().replace("\n", " "))
     
-    print(f"✅ Found {len(sql_sentences)} relevant sentences in the resume.")
-    return sql_sentences
+    print(f"✅ Found {len(skill_sentences)} relevant sentences in the resume.")
+    return skill_sentences
 
 # --- 4. RAG Context Retrieval ---
 
@@ -129,29 +137,30 @@ def initialize_interview_chain(google_api_key, student_name):
 
     prompt_template_text = f"""
 ### Persona:
-You are an expert Hiring Manager at a top tech company. You are interviewing {student_name}.
+You are an expert Hiring Manager at a top tech company. You are interviewing "{student_name}". Your goal is to assess their skills based on their resume and the provided context.
 
 ### Primary Goal:
 Your response MUST be structured in two parts: an <evaluation> block and a <question> block.
 
 ---
 ### **Contextual Data (Candidate's Resume & Job-Related Info):**
-{related_data}
+{{related_data}}
 ---
 ### **Ongoing Interview Transcript:**
-{chat_history}
+{{chat_history}}
 ---
 ### **Your Two-Part Task:**
-1.  **Internal Evaluation (Think Step):** In an `<evaluation>` tag, write a brief, private analysis of the candidate's last answer.
-2.  **Formulate Next Question (Act Step):** In a `<question>` tag, write your response to the candidate. Acknowledge their last point and ask your next single, open-ended question.
+1.  **Internal Evaluation (Think Step):** In an `<evaluation>` tag, write a brief, private analysis of the candidate's last answer. Assess its technical depth and clarity.
+2.  **Formulate Next Question (Act Step):** In a `<question>` tag, write your response to the candidate. Briefly acknowledge their last point and then ask your next single, open-ended question.
 
 **Your Turn:**
 """
+
     prompt = PromptTemplate(
         template=prompt_template_text,
         input_variables=["related_data", "chat_history"]
     )
-    
+    print(prompt)
     return prompt | llm | StrOutputParser()
 
 # --- 6. Feedback Report Generation ---
@@ -163,34 +172,33 @@ def generate_feedback_report_chain(google_api_key):
     """
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
-    # ### FINAL, MOST DIRECT PROMPT ###
     # This prompt is structured to eliminate any possible confusion for the LLM.
     # It contains no examples, only direct commands and the data placeholder.
-    prompt_template_text = f"""
-    You are a hiring manager. Your only task is to analyze the interview transcript provided below and generate a performance report.
+    prompt_template_text = """
+You are a hiring manager. Your only task is to analyze the interview transcript provided below and generate a performance report based *only* on that transcript.
 
-    **YOUR OUTPUT MUST STRICTLY FOLLOW THIS FORMAT:**
+**YOUR OUTPUT MUST STRICTLY FOLLOW THIS FORMAT:**
 
-    ### Overall Summary
-    A 2-3 sentence summary of the candidate's performance.
+### Overall Summary
+A 2-3 sentence summary of the candidate's performance during the interview.
 
-    ### Strengths
-    * A bullet point listing a key strength.
-    * Another bullet point listing a strength.
+### Strengths
+* A bullet point listing a key strength demonstrated in the transcript.
+* Another bullet point listing a different strength.
 
-    ### Areas for Improvement
-    * A bullet point listing a constructive point of feedback.
+### Areas for Improvement
+* A bullet point with constructive feedback based on their answers.
 
-    ### Hiring Recommendation
-    A clear recommendation (e.g., "Recommend," "Strong Recommend," "No Hire") followed by a single sentence justification.
+### Hiring Recommendation
+A clear recommendation (e.g., "Recommend," "Strong Recommend," "No Hire") followed by a single sentence justification based on the interview.
 
-    ---
-    **INTERVIEW TRANSCRIPT TO ANALYZE:**
-    {chat_history}
-    ---
+---
+**INTERVIEW TRANSCRIPT TO ANALYZE:**
+{{chat_history}}
+---
 
-    **PERFORMANCE REPORT:**
-    """
+**PERFORMANCE REPORT:**
+"""
     prompt = PromptTemplate(
         template=prompt_template_text,
         input_variables=["chat_history"]
