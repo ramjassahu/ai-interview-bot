@@ -123,7 +123,7 @@ def get_relevant_context(retriever, queries):
 # --- 5. Conversational Chain Initialization ---
 
 
-def initialize_interview_chain(google_api_key, student_name):
+def initialize_chain(google_api_key, student_name):
     """
     Initializes the LangChain chain for conducting the interactive part of the interview.
     This chain now prompts the model to internally evaluate the last response before asking a new question.
@@ -176,5 +176,6 @@ Conduct a realistic interview. Your entire response MUST be structured in two pa
     
     # The chain remains the same, but the output it produces is now structured XML
     return prompt | llm | StrOutputParser()
+
 
 
