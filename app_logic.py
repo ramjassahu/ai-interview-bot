@@ -125,7 +125,6 @@ def get_relevant_context(retriever, queries):
 def initialize_interview_chain(google_api_key, student_name):
     """
     Initializes the LangChain chain for conducting the interactive part of the interview.
-    This chain now prompts the model to internally evaluate the last response before asking a new question.
     """
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
@@ -139,27 +138,22 @@ Conduct a realistic interview. Your entire response MUST be structured in two pa
 ---
 
 ### **Contextual Data (Candidate's Resume & Job-Related Info):**
-* **Source of Truth:** Base your questions and evaluation on this data.
-* **Content:** Contains information from the knowledge base relevant to the candidate's skills.
-
 {{related_data}}
 ---
 
 ### **Ongoing Interview Transcript:**
-* **Source of Continuity:** Review this to understand the conversation flow. The last entry is the candidate's most recent answer. Do not repeat questions.
-
 {{chat_history}}
 ---
 
 ### **Your Two-Part Task:**
 
-1.  **Internal Evaluation (Think Step):** Inside an `<evaluation>` XML tag, write a brief, private analysis of the candidate's last answer. Assess its technical depth, clarity, and relevance based on the `Contextual Data`. This is your internal monologue and WILL NOT be shown to the candidate.
+1.  **Internal Evaluation (Think Step):** Inside an `<evaluation>` XML tag, write a brief, private analysis of the candidate's last answer. Assess its technical depth, clarity, and relevance. This is your internal monologue.
 
-2.  **Formulate Next Question (Act Step):** Inside a `<question>` XML tag, write your response to the candidate. Start by briefly acknowledging their last point, then smoothly transition to your next single, open-ended question. This question should probe deeper into a topic from the `Contextual Data` or their last response.
+2.  **Formulate Next Question (Act Step):** Inside a `<question>` XML tag, write your response to the candidate. Acknowledge their last point, then transition to your next single, open-ended question.
 
 **Example Output Structure:**
-<evaluation>The candidate provided a solid, high-level overview of the project but didn't mention specific challenges or metrics. I should probe for more detail.</evaluation>
-<question>That's a great summary of the project's goals. Could you walk me through the most significant technical challenge you faced and how you overcame it?</question>
+<evaluation>The candidate's overview was good but lacked specific metrics. I need to probe for details.</evaluation>
+<question>That's a helpful summary. Could you walk me through the most significant technical challenge you faced and how you overcame it?</question>
 
 **Your Turn:**
 """
@@ -174,35 +168,30 @@ Conduct a realistic interview. Your entire response MUST be structured in two pa
 
 def generate_feedback_report_chain(google_api_key):
     """
-    Initializes a separate LangChain chain to generate a final feedback report
-    based on the complete interview transcript.
+    Initializes a separate LangChain chain to generate a final feedback report.
     """
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
+    # ### MODIFIED PROMPT ###
+    # This prompt is now much more direct to prevent the model from getting confused.
+    # It clearly states the task and separates the instructions from the input data.
     prompt_template_text = """
-### Persona:
-You are an expert Hiring Manager finalizing your notes after a technical interview. Your task is to write a comprehensive and constructive performance report.
+### Your Role and Goal:
+You are an expert Hiring Manager. Your task is to analyze the complete interview transcript provided below and write a comprehensive, constructive performance report for the hiring committee.
 
-### Primary Goal:
-Analyze the provided interview transcript and generate a structured feedback report. The report should be professional, objective, and helpful for the hiring committee.
+### Instructions:
+Based *only* on the transcript, generate a feedback report with these exact sections:
+1.  **Overall Summary:** A brief, 2-3 sentence paragraph summarizing your impression of the candidate.
+2.  **Strengths:** A bulleted list of 2-4 key strengths demonstrated by the candidate.
+3.  **Areas for Improvement:** A bulleted list of 1-3 areas where the candidate could improve. Frame this constructively.
+4.  **Hiring Recommendation:** A clear recommendation (e.g., "Strong Recommend," "Recommend," "Leaning No," "No Hire") with a one-sentence justification.
 
 ---
-
-### **Complete Interview Transcript:**
-* **Source of Truth:** This is the full conversation history between the interviewer (you) and the candidate.
-
+### **Complete Interview Transcript to Analyze:**
 {{chat_history}}
 ---
 
-### **Your Task:**
-Based on the entire transcript, generate a feedback report with the following sections:
-
-1.  **Overall Summary:** A brief, 2-3 sentence paragraph summarizing your overall impression of the candidate.
-2.  **Strengths:** Use a bulleted list to highlight 2-4 key strengths the candidate demonstrated (e.g., technical depth in a specific area, clear communication, strong problem-solving skills).
-3.  **Areas for Improvement:** Use a bulleted list to identify 1-3 areas where the candidate could improve or where you'd want to probe further in a next round. Frame this constructively.
-4.  **Hiring Recommendation:** State a clear recommendation (e.g., "Strong Recommend," "Recommend," "Leaning No," "No Hire") and provide a one-sentence justification.
-
-**Hiring Manager's Report:**
+### **Hiring Manager's Report:**
 """
     prompt = PromptTemplate(
         template=prompt_template_text,
