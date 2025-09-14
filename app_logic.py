@@ -77,13 +77,9 @@ def get_retriever(knowledge_base_path, cohere_api_key):
 
 def analyze_resume(resume_path):
     """Extracts text from a resume and finds sentences related to SQL/databases."""
-    try:
+    
         nlp = spacy.load("en_core_web_sm")
-    except OSError:
-        print("Downloading 'en_core_web_sm' model...")
-        os.system("python -m spacy download en_core_web_sm")
-        nlp = spacy.load("en_core_web_sm")
-
+   
     text = ""
     try:
         with fitz.open(resume_path) as doc:
@@ -170,4 +166,5 @@ Conduct a realistic interview. Your response must always conclude with a single,
     )
     
     # Using LangChain Expression Language (LCEL)
+
     return prompt | llm | StrOutputParser()
