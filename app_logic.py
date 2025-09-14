@@ -127,7 +127,8 @@ def initialize_interview_chain(google_api_key, student_name):
     """
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
-    prompt_template_text = f"""
+    prompt_template_text = 
+    """
 ### Persona:
 You are an expert Hiring Manager at a top tech company. You are interviewing "{student_name}".
 
@@ -197,3 +198,4 @@ def generate_feedback_report_chain(google_api_key):
     )
     
     return prompt | llm | StrOutputParser()
+
