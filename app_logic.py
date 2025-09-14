@@ -167,7 +167,7 @@ def generate_feedback_report_chain(google_api_key):
     # ### FINAL, MOST DIRECT PROMPT ###
     # This prompt is structured to eliminate any possible confusion for the LLM.
     # It contains no examples, only direct commands and the data placeholder.
-    prompt_template_text = """
+    prompt_template_text = f"""
     You are a hiring manager. Your only task is to analyze the interview transcript provided below and generate a performance report.
 
     **YOUR OUTPUT MUST STRICTLY FOLLOW THIS FORMAT:**
@@ -198,5 +198,6 @@ def generate_feedback_report_chain(google_api_key):
     )
     
     return prompt | llm | StrOutputParser()
+
 
 
