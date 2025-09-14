@@ -32,7 +32,6 @@ def setup_environment():
 def get_retriever(knowledge_base_path, cohere_api_key):
     """
     Creates or loads a hybrid retriever (FAISS + BM25) from a PDF document.
-    Caches the vector store and splits for faster re-runs.
     """
     doc_name = os.path.splitext(os.path.basename(knowledge_base_path))[0]
     vectordb_path = f"faiss_cache_{doc_name}"
@@ -130,30 +129,21 @@ def initialize_interview_chain(google_api_key, student_name):
 
     prompt_template_text = f"""
 ### Persona:
-You are an expert Hiring Manager at a top tech company: insightful, professional, and friendly. You are interviewing "{student_name}" for a technical role. Your goal is to assess their skills and engage them in a natural, coherent conversation.
+You are an expert Hiring Manager at a top tech company. You are interviewing "{student_name}".
 
 ### Primary Goal:
-Conduct a realistic interview. Your entire response MUST be structured in two parts: an <evaluation> block and a <question> block.
+Your response MUST be structured in two parts: an <evaluation> block and a <question> block.
 
 ---
-
 ### **Contextual Data (Candidate's Resume & Job-Related Info):**
 {{related_data}}
 ---
-
 ### **Ongoing Interview Transcript:**
 {{chat_history}}
 ---
-
 ### **Your Two-Part Task:**
-
-1.  **Internal Evaluation (Think Step):** Inside an `<evaluation>` XML tag, write a brief, private analysis of the candidate's last answer. Assess its technical depth, clarity, and relevance. This is your internal monologue.
-
-2.  **Formulate Next Question (Act Step):** Inside a `<question>` XML tag, write your response to the candidate. Acknowledge their last point, then transition to your next single, open-ended question.
-
-**Example Output Structure:**
-<evaluation>The candidate's overview was good but lacked specific metrics. I need to probe for details.</evaluation>
-<question>That's a helpful summary. Could you walk me through the most significant technical challenge you faced and how you overcame it?</question>
+1.  **Internal Evaluation (Think Step):** In an `<evaluation>` tag, write a brief, private analysis of the candidate's last answer.
+2.  **Formulate Next Question (Act Step):** In a `<question>` tag, write your response to the candidate. Acknowledge their last point and ask your next single, open-ended question.
 
 **Your Turn:**
 """
@@ -172,27 +162,26 @@ def generate_feedback_report_chain(google_api_key):
     """
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
-    # ### MODIFIED PROMPT ###
-    # This prompt is now much more direct to prevent the model from getting confused.
-    # It clearly states the task and separates the instructions from the input data.
+    # ### FINAL, MOST DIRECT PROMPT ###
+    # This prompt is structured to eliminate any possible confusion for the LLM.
+    # It explicitly separates the fixed instructions from the variable user input.
     prompt_template_text = """
-### Your Role and Goal:
-You are an expert Hiring Manager. Your task is to analyze the complete interview transcript provided below and write a comprehensive, constructive performance report for the hiring committee.
+    **TASK:** You are a hiring manager. Analyze the following interview transcript and generate a performance report.
 
-### Instructions:
-Based *only* on the transcript, generate a feedback report with these exact sections:
-1.  **Overall Summary:** A brief, 2-3 sentence paragraph summarizing your impression of the candidate.
-2.  **Strengths:** A bulleted list of 2-4 key strengths demonstrated by the candidate.
-3.  **Areas for Improvement:** A bulleted list of 1-3 areas where the candidate could improve. Frame this constructively.
-4.  **Hiring Recommendation:** A clear recommendation (e.g., "Strong Recommend," "Recommend," "Leaning No," "No Hire") with a one-sentence justification.
+    **FORMAT:** Your output MUST follow this structure exactly:
+    1.  **Overall Summary:** A 2-3 sentence summary.
+    2.  **Strengths:** A bulleted list of strengths.
+    3.  **Areas for Improvement:** A bulleted list of constructive feedback.
+    4.  **Hiring Recommendation:** A clear recommendation and a one-sentence justification.
 
----
-### **Complete Interview Transcript to Analyze:**
-{{chat_history}}
----
+    **DO NOT** ask for the transcript. It is provided below, enclosed in triple backticks.
 
-### **Hiring Manager's Report:**
-"""
+    ```transcript
+    {{chat_history}}
+    ```
+
+    **BEGIN REPORT:**
+    """
     prompt = PromptTemplate(
         template=prompt_template_text,
         input_variables=["chat_history"]
