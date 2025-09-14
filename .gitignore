@@ -1,0 +1,18 @@
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Streamlit secrets (for local testing)
+.streamlit/secrets.toml
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Temporary and cache files from our app
+temp/
+faiss_cache_*
+splits_cache_*

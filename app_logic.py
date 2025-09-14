@@ -1,0 +1,173 @@
+import os
+import pickle
+import fitz  # PyMuPDF
+import spacy
+from dotenv import load_dotenv
+from langchain_core.output_parsers import StrOutputParser
+from langchain.prompts import PromptTemplate
+from langchain_cohere import CohereEmbeddings
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.retrievers import BM25Retriever
+from langchain_community.vectorstores import FAISS
+from langchain.retrievers.ensemble import EnsembleRetriever
+from langchain_google_genai import GoogleGenerativeAI
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# This resolves a common issue on Windows with multiple OpenMP libraries
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+# --- 1. Environment and API Key Setup ---
+
+def setup_environment():
+    """Loads environment variables and returns API keys."""
+    load_dotenv()
+    cohere_api_key = os.getenv("COHERE_API_KEY")
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+    if not cohere_api_key or not google_api_key:
+        raise ValueError("COHERE_API_KEY and GOOGLE_API_KEY must be set in a .env file.")
+    return cohere_api_key, google_api_key
+
+# --- 2. Document Processing and Retriever Creation ---
+
+def get_retriever(knowledge_base_path, cohere_api_key):
+    """
+    Creates or loads a hybrid retriever (FAISS + BM25) from a PDF document.
+    Caches the vector store and splits for faster re-runs.
+    """
+    doc_name = os.path.splitext(os.path.basename(knowledge_base_path))[0]
+    vectordb_path = f"faiss_cache_{doc_name}"
+    splits_path = f"splits_cache_{doc_name}.pkl"
+
+    embedding = CohereEmbeddings(model="embed-english-v3.0", cohere_api_key=cohere_api_key)
+
+    if os.path.exists(vectordb_path) and os.path.exists(splits_path):
+        print("📦 Loading existing FAISS vector store and splits...")
+        vectordb = FAISS.load_local(vectordb_path, embedding, allow_dangerous_deserialization=True)
+        with open(splits_path, "rb") as f:
+            splits = pickle.load(f)
+    else:
+        print(f"🔧 Building new vector store for {doc_name}...")
+        loader = PyPDFLoader(knowledge_base_path)
+        pages = loader.load()
+        splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        splits = splitter.split_documents(pages)
+
+        if not splits:
+            print("⚠️ No splits were created from the document. Cannot build retriever.")
+            return None
+
+        vectordb = FAISS.from_documents(splits, embedding=embedding)
+        vectordb.save_local(vectordb_path)
+        with open(splits_path, "wb") as f:
+            pickle.dump(splits, f)
+        print("💾 Vector store and splits saved.")
+
+    faiss_retriever = vectordb.as_retriever(search_kwargs={"k": 3})
+    bm25_retriever = BM25Retriever.from_documents(splits)
+    bm25_retriever.k = 3
+
+    ensemble_retriever = EnsembleRetriever(
+        retrievers=[faiss_retriever, bm25_retriever],
+        weights=[0.5, 0.5],
+    )
+    print("✅ Ensemble retriever created.")
+    return ensemble_retriever
+
+# --- 3. Resume Analysis ---
+
+def analyze_resume(resume_path):
+    """Extracts text from a resume and finds sentences related to SQL/databases."""
+    try:
+        nlp = spacy.load("en_core_web_sm")
+    except OSError:
+        print("Downloading 'en_core_web_sm' model...")
+        os.system("python -m spacy download en_core_web_sm")
+        nlp = spacy.load("en_core_web_sm")
+
+    text = ""
+    try:
+        with fitz.open(resume_path) as doc:
+            for page in doc:
+                text += page.get_text()
+    except Exception as e:
+        print(f"Error reading resume PDF: {e}")
+        return []
+
+    if not text:
+        return []
+
+    sql_keywords = [
+        "sql", "mysql", "postgresql", "mssql", "sqlite", "sql server",
+        "oracle", "database", "t-sql", "pl/sql", "query", "queries", "nosql",
+        "mongodb", "cassandra", "data modeling", "data warehousing"
+    ]
+    doc = nlp(text)
+    sql_sentences = []
+    for sentence in doc.sents:
+        if any(keyword in sentence.text.lower() for keyword in sql_keywords):
+            sql_sentences.append(sentence.text.strip().replace("\n", " "))
+    
+    print(f"✅ Found {len(sql_sentences)} relevant sentences in the resume.")
+    return sql_sentences
+
+# --- 4. RAG Context Retrieval ---
+
+def get_relevant_context(retriever, queries):
+    """Uses the retriever to find document chunks relevant to the resume queries."""
+    if not retriever or not queries:
+        return ""
+    
+    all_docs = []
+    for query in queries:
+        relevant_docs = retriever.invoke(query)
+        all_docs.extend(relevant_docs)
+    
+    context_text = "\n\n---\n\n".join([doc.page_content for doc in all_docs])
+    print("✅ Generated context from relevant document chunks.")
+    return context_text
+
+# --- 5. Conversational Chain Initialization ---
+
+def initialize_chain(google_api_key, student_name):
+    """Initializes the LangChain conversational LLM chain using LCEL."""
+    llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
+
+    prompt_template_text = f"""
+### Persona:
+You are an expert Hiring Manager at a top tech company, known for being insightful, professional, and friendly. You are interviewing a promising student, "{student_name}," for a technical role. Your goal is to assess their skills based on their resume and the provided context, while making them feel engaged.
+
+### Primary Goal:
+Conduct a realistic interview. Your response must always conclude with a single, open-ended follow-up question.
+
+---
+
+### **Contextual Data (Candidate's Resume & Job-Related Info):**
+* **Source of Truth:** This is your primary resource. Base your questions directly on this data.
+* **Content:** Contains information from the knowledge base that is relevant to the candidate's skills mentioned in their resume.
+
+{{related_data}}
+---
+
+### **Ongoing Interview Transcript:**
+* **Source of Continuity:** Review this to understand the flow of the conversation. Do not repeat questions.
+
+{{chat_history}}
+---
+
+### **Your Task:**
+1.  **Analyze Context:** Read the `chat_history`.
+2.  **Synthesize Information:** Acknowledge the candidate's last response thoughtfully.
+3.  **Formulate Your Response:**
+    * Begin by addressing the student's most recent statement.
+    * Transition into your next point or question, drawing inspiration from their skills found in the `related_data`.
+    * **Crucially, end your entire output with one, and only one, probing follow-up question.**
+
+**Hiring Manager:**
+"""
+    prompt = PromptTemplate(
+        template=prompt_template_text,
+        input_variables=["related_data", "chat_history"]
+    )
+    
+    # Using LangChain Expression Language (LCEL)
+    return prompt | llm | StrOutputParser()

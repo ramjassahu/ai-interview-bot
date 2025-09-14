@@ -1,0 +1,11 @@
+streamlit
+python-dotenv
+langchain
+langchain-cohere
+langchain-google-genai
+langchain-community
+faiss-cpu
+rank_bm25
+pypdf
+PyMuPDF
+spacy
