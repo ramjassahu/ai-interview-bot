@@ -129,24 +129,25 @@ def initialize_interview_chain(google_api_key, student_name):
 
     prompt_template_text = f"""
 ### Persona:
-You are an expert Hiring Manager at a top tech company. You are interviewing "{student_name}".
+You are an expert Hiring Manager at a top tech company. You are interviewing {student_name}.
 
 ### Primary Goal:
 Your response MUST be structured in two parts: an <evaluation> block and a <question> block.
 
 ---
 ### **Contextual Data (Candidate's Resume & Job-Related Info):**
-{{related_data}}
+{related_data}
 ---
 ### **Ongoing Interview Transcript:**
-{{chat_history}}
+{chat_history}
 ---
 ### **Your Two-Part Task:**
 1.  **Internal Evaluation (Think Step):** In an `<evaluation>` tag, write a brief, private analysis of the candidate's last answer.
 2.  **Formulate Next Question (Act Step):** In a `<question>` tag, write your response to the candidate. Acknowledge their last point and ask your next single, open-ended question.
 
-**Your Turn:**
-"""
+**Your Turn:**  
+   """
+
     prompt = PromptTemplate(
         template=prompt_template_text,
         input_variables=["related_data", "chat_history"]
@@ -186,7 +187,7 @@ def generate_feedback_report_chain(google_api_key):
 
     ---
     **INTERVIEW TRANSCRIPT TO ANALYZE:**
-    {{chat_history}}
+    {chat_history}
     ---
 
     **PERFORMANCE REPORT:**
@@ -197,3 +198,4 @@ def generate_feedback_report_chain(google_api_key):
     )
     
     return prompt | llm | StrOutputParser()
+
