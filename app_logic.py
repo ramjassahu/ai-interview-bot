@@ -159,28 +159,37 @@ Your response MUST be structured in two parts: an <evaluation> block and a <ques
 def generate_feedback_report_chain(google_api_key):
     """
     Initializes a separate LangChain chain to generate a final feedback report.
+    This version uses a highly direct and constrained prompt to prevent hallucinations.
     """
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
     # ### FINAL, MOST DIRECT PROMPT ###
     # This prompt is structured to eliminate any possible confusion for the LLM.
-    # It explicitly separates the fixed instructions from the variable user input.
+    # It contains no examples, only direct commands and the data placeholder.
     prompt_template_text = """
-    **TASK:** You are a hiring manager. Analyze the following interview transcript and generate a performance report.
+    You are a hiring manager. Your only task is to analyze the interview transcript provided below and generate a performance report.
 
-    **FORMAT:** Your output MUST follow this structure exactly:
-    1.  **Overall Summary:** A 2-3 sentence summary.
-    2.  **Strengths:** A bulleted list of strengths.
-    3.  **Areas for Improvement:** A bulleted list of constructive feedback.
-    4.  **Hiring Recommendation:** A clear recommendation and a one-sentence justification.
+    **YOUR OUTPUT MUST STRICTLY FOLLOW THIS FORMAT:**
 
-    **DO NOT** ask for the transcript. It is provided below, enclosed in triple backticks.
+    ### Overall Summary
+    A 2-3 sentence summary of the candidate's performance.
 
-    ```transcript
+    ### Strengths
+    * A bullet point listing a key strength.
+    * Another bullet point listing a strength.
+
+    ### Areas for Improvement
+    * A bullet point listing a constructive point of feedback.
+
+    ### Hiring Recommendation
+    A clear recommendation (e.g., "Recommend," "Strong Recommend," "No Hire") followed by a single sentence justification.
+
+    ---
+    **INTERVIEW TRANSCRIPT TO ANALYZE:**
     {{chat_history}}
-    ```
+    ---
 
-    **BEGIN REPORT:**
+    **PERFORMANCE REPORT:**
     """
     prompt = PromptTemplate(
         template=prompt_template_text,
