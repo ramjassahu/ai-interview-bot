@@ -123,59 +123,48 @@ def get_relevant_context(retriever, queries):
 # --- 5. Conversational Chain Initialization ---
 
 
+
 def initialize_chain(google_api_key, student_name):
-    """
-    Initializes the LangChain chain for conducting the interactive part of the interview.
-    This chain now prompts the model to internally evaluate the last response before asking a new question.
-    """
+    """Initializes the LangChain conversational LLM chain using LCEL."""
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
-    # ### MODIFIED PROMPT ###
-    # This prompt is now more structured. It asks the LLM to perform two steps:
-    # 1. Internal Evaluation: A silent assessment of the candidate's last answer.
-    # 2. Next Question: The actual question to pose to the candidate.
-    # This forces the agent to "think" before it speaks.
     prompt_template_text = f"""
 ### Persona:
-You are an expert Hiring Manager at a top tech company: insightful, professional, and friendly. You are interviewing "{student_name}" for a technical role. Your goal is to assess their skills and engage them in a natural, coherent conversation.
+You are an expert Hiring Manager at a top tech company, known for being insightful, professional, and friendly. You are interviewing a promising student, "{student_name}," for a technical role. Your goal is to assess their skills based on their resume and the provided context, while making them feel engaged.
 
 ### Primary Goal:
-Conduct a realistic interview. Your entire response MUST be structured in two parts: an <evaluation> block and a <question> block.
+Conduct a realistic interview. Your response must always conclude with a single, open-ended follow-up question.
 
 ---
 
 ### **Contextual Data (Candidate's Resume & Job-Related Info):**
-* **Source of Truth:** Base your questions and evaluation on this data.
-* **Content:** Contains information from the knowledge base relevant to the candidate's skills.
+* **Source of Truth:** This is your primary resource. Base your questions directly on this data.
+* **Content:** Contains information from the knowledge base that is relevant to the candidate's skills mentioned in their resume.
 
 {{related_data}}
 ---
 
 ### **Ongoing Interview Transcript:**
-* **Source of Continuity:** Review this to understand the conversation flow. The last entry is the candidate's most recent answer. Do not repeat questions.
+* **Source of Continuity:** Review this to understand the flow of the conversation. Do not repeat questions.
 
 {{chat_history}}
 ---
 
-### **Your Two-Part Task:**
+### **Your Task:**
+1.  **Analyze Context:** Read the `chat_history`.
+2.  **Synthesize Information:** Acknowledge the candidate's last response thoughtfully.
+3.  **Formulate Your Response:**
+    * Begin by addressing the student's most recent statement.
+    * Transition into your next point or question, drawing inspiration from their skills found in the `related_data`.
+    * **Crucially, end your entire output with one, and only one, probing follow-up question.**
 
-1.  **Internal Evaluation (Think Step):** Inside an `<evaluation>` XML tag, write a brief, private analysis of the candidate's last answer. Assess its technical depth, clarity, and relevance based on the `Contextual Data`. This is your internal monologue and WILL NOT be shown to the candidate.
-
-2.  **Formulate Next Question (Act Step):** Inside a `<question>` XML tag, write your response to the candidate. Start by briefly acknowledging their last point, then smoothly transition to your next single, open-ended question. This question should probe deeper into a topic from the `Contextual Data` or their last response.
-
-**Example Output Structure:**
-<evaluation>The candidate provided a solid, high-level overview of the project but didn't mention specific challenges or metrics. I should probe for more detail.</evaluation>
-<question>That's a great summary of the project's goals. Could you walk me through the most significant technical challenge you faced and how you overcame it?</question>
-
-**Your Turn:**
+**Hiring Manager:**
 """
     prompt = PromptTemplate(
         template=prompt_template_text,
         input_variables=["related_data", "chat_history"]
     )
     
-    # The chain remains the same, but the output it produces is now structured XML
+    # Using LangChain Expression Language (LCEL)
     return prompt | llm | StrOutputParser()
-
-
 
