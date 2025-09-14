@@ -13,25 +13,25 @@ from langchain.retrievers.ensemble import EnsembleRetriever
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# Fix for Windows OpenMP conflicts
+# This resolves a common issue on Windows with multiple OpenMP libraries
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
+# --- 1. Environment and API Key Setup ---
 
-# --- 1. Environment Setup ---
 def setup_environment():
     """Loads environment variables and returns API keys."""
     load_dotenv()
     cohere_api_key = os.getenv("COHERE_API_KEY")
     google_api_key = os.getenv("GOOGLE_API_KEY")
     if not cohere_api_key or not google_api_key:
-        raise ValueError("⚠️ COHERE_API_KEY and GOOGLE_API_KEY must be set in a .env file.")
+        raise ValueError("COHERE_API_KEY and GOOGLE_API_KEY must be set in a .env file.")
     return cohere_api_key, google_api_key
 
+# --- 2. Document Processing and Retriever Creation ---
 
-# --- 2. Document Processing ---
 def get_retriever(knowledge_base_path, cohere_api_key):
     """
-    Creates or loads a hybrid retriever (FAISS + BM25) from a PDF knowledge base.
+    Creates or loads a hybrid retriever (FAISS + BM25) from a PDF document.
     """
     doc_name = os.path.splitext(os.path.basename(knowledge_base_path))[0]
     vectordb_path = f"faiss_cache_{doc_name}"
@@ -52,7 +52,7 @@ def get_retriever(knowledge_base_path, cohere_api_key):
         splits = splitter.split_documents(pages)
 
         if not splits:
-            print("⚠️ No splits were created from the document.")
+            print("⚠️ No splits were created from the document. Cannot build retriever.")
             return None
 
         vectordb = FAISS.from_documents(splits, embedding=embedding)
@@ -65,15 +65,17 @@ def get_retriever(knowledge_base_path, cohere_api_key):
     bm25_retriever = BM25Retriever.from_documents(splits)
     bm25_retriever.k = 3
 
-    return EnsembleRetriever(
+    ensemble_retriever = EnsembleRetriever(
         retrievers=[faiss_retriever, bm25_retriever],
         weights=[0.5, 0.5],
     )
-
+    print("✅ Ensemble retriever created.")
+    return ensemble_retriever
 
 # --- 3. Resume Analysis ---
+
 def analyze_resume(resume_path):
-    """Extracts text and finds SQL/database-related experience in resume."""
+    """Extracts text from a resume and finds sentences related to SQL/databases."""
     nlp = spacy.load("en_core_web_sm")
     text = ""
     try:
@@ -81,109 +83,117 @@ def analyze_resume(resume_path):
             for page in doc:
                 text += page.get_text()
     except Exception as e:
-        print(f"❌ Error reading resume PDF: {e}")
+        print(f"Error reading resume PDF: {e}")
+        return []
+
+    if not text:
         return []
 
     sql_keywords = [
         "sql", "mysql", "postgresql", "mssql", "sqlite", "sql server",
-        "oracle", "database", "t-sql", "pl/sql", "query", "queries",
-        "nosql", "mongodb", "cassandra", "data modeling", "data warehousing"
+        "oracle", "database", "t-sql", "pl/sql", "query", "queries", "nosql",
+        "mongodb", "cassandra", "data modeling", "data warehousing"
     ]
-
     doc = nlp(text)
-    sql_sentences = [
-        sent.text.strip().replace("\n", " ")
-        for sent in doc.sents
-        if any(kw in sent.text.lower() for kw in sql_keywords)
-    ]
-
-    print(f"✅ Found {len(sql_sentences)} SQL-related sentences.")
+    sql_sentences = []
+    for sentence in doc.sents:
+        if any(keyword in sentence.text.lower() for keyword in sql_keywords):
+            sql_sentences.append(sentence.text.strip().replace("\n", " "))
+    
+    print(f"✅ Found {len(sql_sentences)} relevant sentences in the resume.")
     return sql_sentences
 
-
 # --- 4. RAG Context Retrieval ---
+
 def get_relevant_context(retriever, queries):
-    """Uses retriever to fetch relevant knowledge base context."""
+    """Uses the retriever to find document chunks relevant to the resume queries."""
     if not retriever or not queries:
         return ""
+    
     all_docs = []
     for query in queries:
-        all_docs.extend(retriever.invoke(query))
-    return "\n\n---\n\n".join([doc.page_content for doc in all_docs])
+        relevant_docs = retriever.invoke(query)
+        all_docs.extend(relevant_docs)
+    
+    context_text = "\n\n---\n\n".join([doc.page_content for doc in all_docs])
+    print("✅ Generated context from relevant document chunks.")
+    return context_text
 
+# --- 5. Conversational Chain Initialization ---
 
-# --- 5. Interview Chain ---
 def initialize_interview_chain(google_api_key, student_name):
-    """Initializes conversational interview chain."""
+    """
+    Initializes the LangChain chain for conducting the interactive part of the interview.
+    """
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
-    prompt_template_text = """
+    prompt_template_text = f"""
 ### Persona:
 You are an expert Hiring Manager at a top tech company. You are interviewing "{student_name}".
 
-### Contextual Data:
-{related_data}
-
-### Ongoing Transcript:
-{chat_history}
+### Primary Goal:
+Your response MUST be structured in two parts: an <evaluation> block and a <question> block.
 
 ---
-### Task:
-1. <evaluation> Give a private assessment of candidate’s last answer.
-2. <question> Acknowledge their answer & ask ONE open-ended follow-up.
-"""
+### **Contextual Data (Candidate's Resume & Job-Related Info):**
+{{related_data}}
+---
+### **Ongoing Interview Transcript:**
+{{chat_history}}
+---
+### **Your Two-Part Task:**
+1.  **Internal Evaluation (Think Step):** In an `<evaluation>` tag, write a brief, private analysis of the candidate's last answer.
+2.  **Formulate Next Question (Act Step):** In a `<question>` tag, write your response to the candidate. Acknowledge their last point and ask your next single, open-ended question.
 
+**Your Turn:**
+"""
     prompt = PromptTemplate(
         template=prompt_template_text,
         input_variables=["related_data", "chat_history"]
     )
+    
     return prompt | llm | StrOutputParser()
 
+# --- 6. Feedback Report Generation ---
 
-# --- 6. Feedback Report Chain ---
 def generate_feedback_report_chain(google_api_key):
-    """Initializes chain to generate final structured feedback report."""
+    """
+    Initializes a separate LangChain chain to generate a final feedback report.
+    This version uses a highly direct and constrained prompt to prevent hallucinations.
+    """
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
+    # ### FINAL, MOST DIRECT PROMPT ###
+    # This prompt is structured to eliminate any possible confusion for the LLM.
+    # It contains no examples, only direct commands and the data placeholder.
     prompt_template_text = """
-You are a hiring manager. Analyze the interview transcript below and generate a report.
+    You are a hiring manager. Your only task is to analyze the interview transcript provided below and generate a performance report.
 
-ONLY use provided chat history. Do not invent or add fake dialogues.
+    **YOUR OUTPUT MUST STRICTLY FOLLOW THIS FORMAT:**
 
----
-INTERVIEW TRANSCRIPT:
-{chat_history}
----
+    ### Overall Summary
+    A 2-3 sentence summary of the candidate's performance.
 
-### Overall Summary
-(2–3 sentences summarizing performance)
+    ### Strengths
+    * A bullet point listing a key strength.
+    * Another bullet point listing a strength.
 
-### Strengths
-* Point 1
-* Point 2
+    ### Areas for Improvement
+    * A bullet point listing a constructive point of feedback.
 
-### Areas for Improvement
-* Point 1
+    ### Hiring Recommendation
+    A clear recommendation (e.g., "Recommend," "Strong Recommend," "No Hire") followed by a single sentence justification.
 
-### Hiring Recommendation
-("Strong Recommend", "Recommend", "No Hire") – one sentence justification.
-"""
+    ---
+    **INTERVIEW TRANSCRIPT TO ANALYZE:**
+    {{chat_history}}
+    ---
 
-    prompt = PromptTemplate(template=prompt_template_text, input_variables=["chat_history"])
+    **PERFORMANCE REPORT:**
+    """
+    prompt = PromptTemplate(
+        template=prompt_template_text,
+        input_variables=["chat_history"]
+    )
+    
     return prompt | llm | StrOutputParser()
-
-
-# --- 7. Wrap-up ---
-def conclude_interview(chat_history, google_api_key):
-    """Generates final feedback report with cleaned transcript."""
-    if not chat_history:
-        return "⚠️ No chat history found."
-
-    formatted = []
-    for i, turn in enumerate(chat_history):
-        role = "Interviewer" if i % 2 == 0 else "Candidate"
-        formatted.append(f"{role}: {turn}")
-    transcript = "\n".join(formatted)
-
-    report_chain = generate_feedback_report_chain(google_api_key)
-    return report_chain.invoke({"chat_history": transcript})
