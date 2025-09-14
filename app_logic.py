@@ -128,7 +128,7 @@ def initialize_interview_chain(google_api_key, student_name):
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
     prompt_template_text = 
-    """
+    f"""
 ### Persona:
 You are an expert Hiring Manager at a top tech company. You are interviewing "{student_name}".
 
@@ -147,7 +147,7 @@ Your response MUST be structured in two parts: an <evaluation> block and a <ques
 2.  **Formulate Next Question (Act Step):** In a `<question>` tag, write your response to the candidate. Acknowledge their last point and ask your next single, open-ended question.
 
 **Your Turn:**
-"""
+
     prompt = PromptTemplate(
         template=prompt_template_text,
         input_variables=["related_data", "chat_history"]
@@ -198,4 +198,5 @@ def generate_feedback_report_chain(google_api_key):
     )
     
     return prompt | llm | StrOutputParser()
+
 
