@@ -160,7 +160,7 @@ Your response MUST be structured in two parts: an <evaluation> block and a <ques
         template=prompt_template_text,
         input_variables=["related_data", "chat_history"]
     )
-    print(prompt)
+    
     return prompt | llm | StrOutputParser()
 
 # --- 6. Feedback Report Generation ---
