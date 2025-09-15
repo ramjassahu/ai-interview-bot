@@ -76,11 +76,14 @@ def get_retriever(knowledge_base_path, cohere_api_key):
 # --- 3. Resume Analysis ---
 
 def analyze_resume(resume_path):
-    """
-    Extracts text from a resume and finds sentences related to technical skills.
-    This version is more generic than the original SQL-focused one.
-    """
-    nlp = spacy.load("en_core_web_sm")
+    """Extracts text from a resume and finds sentences related to SQL/databases."""
+    try:
+        nlp = spacy.load("en_core_web_sm")
+    except OSError:
+        print("Downloading 'en_core_web_sm' model...")
+        os.system("python -m spacy download en_core_web_sm")
+        nlp = spacy.load("en_core_web_sm")
+
     text = ""
     try:
         with fitz.open(resume_path) as doc:
@@ -93,23 +96,19 @@ def analyze_resume(resume_path):
     if not text:
         return []
 
-    # Expanded list of technical keywords
-    tech_keywords = [
-        "python", "java", "c++", "javascript", "sql", "nosql", "react", "angular", "vue",
-        "django", "flask", "spring", "node.js", "docker", "kubernetes", "aws", "azure", "gcp",
-        "tensorflow", "pytorch", "scikit-learn", "pandas", "numpy", "api", "rest", "graphql",
-        "mysql", "postgresql", "mongodb", "redis", "cassandra", "data modeling", "data warehousing",
-        "machine learning", "deep learning", "natural language processing", "computer vision",
-        "langchain", "faiss", "bm25", "fastapi"
+    sql_keywords = [
+        "sql", "mysql", "postgresql", "mssql", "sqlite", "sql server",
+        "oracle", "database", "t-sql", "pl/sql", "query", "queries", "nosql",
+        "mongodb", "cassandra", "data modeling", "data warehousing"
     ]
     doc = nlp(text)
-    skill_sentences = []
+    sql_sentences = []
     for sentence in doc.sents:
-        if any(keyword in sentence.text.lower() for keyword in tech_keywords):
-            skill_sentences.append(sentence.text.strip().replace("\n", " "))
+        if any(keyword in sentence.text.lower() for keyword in sql_keywords):
+            sql_sentences.append(sentence.text.strip().replace("\n", " "))
     
-    print(f"✅ Found {len(skill_sentences)} relevant sentences in the resume.")
-    return skill_sentences
+    print(f"✅ Found {len(sql_sentences)} relevant sentences in the resume.")
+    return sql_sentences
 
 # --- 4. RAG Context Retrieval ---
 
@@ -129,79 +128,46 @@ def get_relevant_context(retriever, queries):
 
 # --- 5. Conversational Chain Initialization ---
 
-def initialize_interview_chain(google_api_key, student_name):
-    """
-    Initializes the LangChain chain for conducting the interactive part of the interview.
-    """
+def initialize_chain(google_api_key, student_name):
+    """Initializes the LangChain conversational LLM chain using LCEL."""
     llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
 
     prompt_template_text = f"""
 ### Persona:
-You are an expert Hiring Manager at a top tech company. You are interviewing "{student_name}". Your goal is to assess their skills based on their resume and the provided context.
+You are an expert Hiring Manager at a top tech company, known for being insightful, professional, and friendly. You are interviewing a promising student, "{student_name}," for a technical role. Your goal is to assess their skills based on their resume and the provided context, while making them feel engaged.
 
 ### Primary Goal:
-Your response MUST be structured in two parts: an <evaluation> block and a <question> block.
+Conduct a realistic interview. Your response must always conclude with a single, open-ended follow-up question.
 
 ---
+
 ### **Contextual Data (Candidate's Resume & Job-Related Info):**
+* **Source of Truth:** This is your primary resource. Base your questions directly on this data.
+* **Content:** Contains information from the knowledge base that is relevant to the candidate's skills mentioned in their resume.
+
 {{related_data}}
 ---
+
 ### **Ongoing Interview Transcript:**
+* **Source of Continuity:** Review this to understand the flow of the conversation. Do not repeat questions.
+
 {{chat_history}}
 ---
-### **Your Two-Part Task:**
-1.  **Internal Evaluation (Think Step):** In an `<evaluation>` tag, write a brief, private analysis of the candidate's last answer. Assess its technical depth and clarity.
-2.  **Formulate Next Question (Act Step):** In a `<question>` tag, write your response to the candidate. Briefly acknowledge their last point and then ask your next single, open-ended question.
 
-**Your Turn:**
+### **Your Task:**
+1.  **Analyze Context:** Read the `chat_history`.
+2.  **Synthesize Information:** Acknowledge the candidate's last response thoughtfully.
+3.  **Formulate Your Response:**
+    * Begin by addressing the student's most recent statement.
+    * Transition into your next point or question, drawing inspiration from their skills found in the `related_data`.
+    * **Crucially, end your entire output with one, and only one, probing follow-up question.**
+
+**Hiring Manager:**
 """
-
     prompt = PromptTemplate(
         template=prompt_template_text,
         input_variables=["related_data", "chat_history"]
     )
     
-    return prompt | llm | StrOutputParser()
-
-# --- 6. Feedback Report Generation ---
-
-def generate_feedback_report_chain(google_api_key):
-    """
-    Initializes a separate LangChain chain to generate a final feedback report.
-    This version uses a highly direct and constrained prompt to prevent hallucinations.
-    """
-    llm = GoogleGenerativeAI(model="gemini-1.5-flash-latest", google_api_key=google_api_key)
-
-    # This prompt is structured to eliminate any possible confusion for the LLM.
-    # It contains no examples, only direct commands and the data placeholder.
-    prompt_template_text = """
-You are a hiring manager. Your only task is to analyze the interview transcript provided below and generate a performance report based *only* on that transcript.
-
-**YOUR OUTPUT MUST STRICTLY FOLLOW THIS FORMAT:**
-
-### Overall Summary
-A 2-3 sentence summary of the candidate's performance during the interview.
-
-### Strengths
-* A bullet point listing a key strength demonstrated in the transcript.
-* Another bullet point listing a different strength.
-
-### Areas for Improvement
-* A bullet point with constructive feedback based on their answers.
-
-### Hiring Recommendation
-A clear recommendation (e.g., "Recommend," "Strong Recommend," "No Hire") followed by a single sentence justification based on the interview.
-
----
-**INTERVIEW TRANSCRIPT TO ANALYZE:**
-{{chat_history}}
----
-
-**PERFORMANCE REPORT:**
-"""
-    prompt = PromptTemplate(
-        template=prompt_template_text,
-        input_variables=["chat_history"]
-    )
-    
+    # Using LangChain Expression Language (LCEL)
     return prompt | llm | StrOutputParser()
